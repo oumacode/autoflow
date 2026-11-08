@@ -1,0 +1,20 @@
+package com.workflow_automation.auth_service.repository;
+
+import com.workflow_automation.auth_service.entity.User;
+import org.springframework.data.jpa.repository.JpaRepository;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+
+public interface UserRepository extends JpaRepository<User, Long> {
+    Optional<User> findByEmail(String email);
+    Optional<User> findByVerificationToken(String verificationToken);
+    Optional<User> findByResetPasswordToken(String resetPasswordToken);
+    boolean existsByEmail(String email);
+    List<User> findByEnabledFalseAndVerificationTokenExpiresAtBefore(LocalDateTime cutoff);
+
+    List<User> findByEnabledFalseAndVerificationTokenIsNotNull();
+    List<User> findByOrganizationId(Long organizationId);
+
+    List<User> findByOrganizationIdAndEnabledTrue(Long organizationId);
+}

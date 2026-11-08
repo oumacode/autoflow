@@ -1,0 +1,149 @@
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: pfa-postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./workflow-automation-backend/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    networks:
+      - pfa-network
+
+
+  # Auth Service
+  auth-service:
+    build:
+      context: ./workflow-automation-backend/auth-service
+      dockerfile: Dockerfile
+    container_name: pfa-auth-service
+    ports:
+      - "8081:8081"
+    env_file:
+      - ./workflow-automation-backend/auth-service/.env
+    environment:
+      - DB_URL=jdbc:postgresql://postgres:5432/auth_db
+      - ORGANIZATION_SERVICE_URL=http://organization-service:8083/api/organizations
+      - AUDIT_SERVICE_URL=http://audit-service:8085/api/audit
+    depends_on:
+      - postgres
+      - organization-service
+    networks:
+      - pfa-network
+
+  # Workflow Service
+  workflow-service:
+    build:
+      context: ./workflow-automation-backend/workflow-service
+      dockerfile: Dockerfile
+    container_name: pfa-workflow-service
+    ports:
+      - "8082:8082"
+    env_file:
+      - ./workflow-automation-backend/workflow-service/.env
+    environment:
+      - DB_URL=jdbc:postgresql://postgres:5432/workflow_db
+      - ORGANIZATION_SERVICE_URL=http://organization-service:8083/api/organizations
+      - AUDIT_SERVICE_URL=http://audit-service:8085/api/audit
+    depends_on:
+      - postgres
+    networks:
+      - pfa-network
+
+  # Organization Service
+  organization-service:
+    build:
+      context: ./workflow-automation-backend/organization-service
+      dockerfile: Dockerfile
+    container_name: pfa-organization-service
+    ports:
+      - "8083:8083"
+    env_file:
+      - ./workflow-automation-backend/organization-service/.env
+    environment:
+      - DB_URL=jdbc:postgresql://postgres:5432/organization_db
+    depends_on:
+      - postgres
+    networks:
+      - pfa-network
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: ./workflow-automation-backend/api-gateway
+      dockerfile: Dockerfile
+    container_name: pfa-api-gateway
+    ports:
+      - "8085:8085"
+    env_file:
+      - ./workflow-automation-backend/api-gateway/.env
+    environment:
+      - AUTH_SERVICE_URI=http://auth-service:8081
+      - WORKFLOW_SERVICE_URI=http://workflow-service:8082
+      - ORGANIZATION_SERVICE_URI=http://organization-service:8083
+
+      - AUDIT_SERVICE_URI=http://audit-service:8085
+    depends_on:
+      - auth-service
+      - workflow-service
+      - organization-service
+
+      - audit-service
+    networks:
+      - pfa-network
+
+  # Frontend
+  frontend:
+    build:
+      context: ./workflow-automation-frontend
+      dockerfile: Dockerfile
+    container_name: pfa-frontend
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./workflow-automation-frontend/.env
+    environment:
+      - CHOKIDAR_USEPOLLING=false
+      - WATCHPACK_POLLING=false
+      - WDS_SOCKET_PORT=3000
+      - WDS_SOCKET_HOST=localhost
+      - FAST_REFRESH=true
+    volumes:
+      - ./workflow-automation-frontend:/app
+      - /app/node_modules
+    depends_on:
+      - api-gateway
+    networks:
+      - pfa-network
+
+
+    # Audit Service
+  audit-service:
+    build:
+      context: ./workflow-automation-backend/audit-service
+      dockerfile: Dockerfile
+    container_name: pfa-audit-service
+    ports:
+      - "8086:8085"
+    env_file:
+      - ./workflow-automation-backend/audit-service/.env
+    environment:
+      - DB_URL=jdbc:postgresql://postgres:5432/audit_db
+      - DB_USERNAME=pfa_user
+      - DB_PASSWORD=pfa_password
+    depends_on:
+      - postgres
+    networks:
+      - pfa-network
+
+volumes:
+  postgres_data:
+
+networks:
+  pfa-network:
+    driver: bridge
